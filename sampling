@@ -1,0 +1,5 @@
+function audioinput_frequencyAdjusted = sampling(audioinput, frequencyAdjust)
+audioinput_frequencyAdjusted = audioinput(1 : frequencyAdjust : end);
+
+end
+
