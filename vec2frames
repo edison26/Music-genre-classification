@@ -1,0 +1,98 @@
+function [ frames, indexes ] = vec2frames( vec, Nw, Ns, direction, window, padding )
+
+
+
+   
+    usage = 'usage: [ frames, indexes ] = vec2frames( vector, frame_length, frame_shift, direction, window, padding );';
+
+    
+    switch( nargin )
+    case { 0, 1, 2 }, error( usage );
+    case 3, padding=false; window=false; direction='cols';
+    case 4, padding=false; window=false; 
+    case 5, padding=false; 
+    end
+
+    % input validation
+    if( isempty(vec) || isempty(Nw) || isempty(Ns) ), error( usage ); end;
+    if( min(size(vec))~=1 ), error( usage ); end;
+    if( Nw==0 || Ns==0 ), error( usage ); end;
+
+    vec = vec(:);                       % ensure column vector
+
+    L = length( vec );                  % length of the input vector
+    M = floor((L-Nw)/Ns+1);             % number of frames 
+
+
+    
+    if( ~isempty(padding) )
+ 
+        E = (L-((M-1)*Ns+Nw));
+
+        if( E>0 ) 
+
+            P = Nw-E;
+
+            if( islogical(padding) && padding ) 
+                vec = [ vec; zeros(P,1) ];
+
+            elseif( isnumeric(padding) && length(padding)==1 ) 
+                vec = [ vec; padding*ones(P,1) ];
+
+            elseif( isstr(padding) && strcmp(padding,'noise') ) 
+                vec = [ vec; 1E-6*randn(P,1) ];
+
+            elseif( iscell(padding) && strcmp(padding{1},'noise') ) 
+                if( length(padding)>1 ), scale = padding{2}; 
+                else, scale = 1E-6; end;
+                vec = [ vec; scale*randn(P,1) ];
+
+          
+            else
+                M = M-1;
+
+            end
+
+            M = M+1;
+        end
+    end
+
+
+    switch( direction )
+
+    case 'rows'                                                 
+        indf = Ns*[ 0:(M-1) ].';                                   
+        inds = [ 1:Nw ];                                        
+        indexes = indf(:,ones(1,Nw)) + inds(ones(M,1),:);       
+    
+    case 'cols'                                                 
+        indf = Ns*[ 0:(M-1) ];                                 
+        inds = [ 1:Nw ].';                                      
+        indexes = indf(ones(Nw,1),:) + inds(:,ones(1,M));      
+    
+    otherwise
+        error( sprintf('Direction: %s not supported!\n', direction) ); 
+
+    end
+
+
+    frames = vec( indexes );
+
+
+    if( isempty(window) || ( islogical(window) && ~window ) ), return; end;
+    
+    if( isa(window,'function_handle') )
+        window = window( Nw );
+    end
+    
+    if( isnumeric(window) && length(window)==Nw )
+
+        switch( direction )
+        case 'rows', frames = frames * diag( window );
+        case 'cols', frames = diag( window ) * frames;
+        end
+
+    end
+
+
+
