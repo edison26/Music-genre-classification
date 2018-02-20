@@ -1,0 +1,8 @@
+function Speech_Quantized = quantization(audioinput, numLevels)
+
+
+N = numLevels;
+Q = 2/N;
+Speech_Quantized = sign(audioinput).*(floor(abs(audioinput)/Q))*Q;
+
+end
