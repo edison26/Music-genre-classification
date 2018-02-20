@@ -1,0 +1,171 @@
+clc;
+clear all;
+close all;
+[filename, pathname] = uigetfile({'*.*';'*.mp3';'*.wav';}, 'Pick a audio File');
+[v,Fs]= audioread([pathname,filename]);
+figure();
+plot(v);
+v=v(1:50000);
+title('Input audio signal');
+%sampling and quantization
+Sam_signal = sampling(v,1);
+Quanti_signal = quantization(v,64); 
+figure();
+plot(Quanti_signal);
+title('quantication signal');
+%%pre-emphasis
+a=0.95;
+y2 = filter([1, -a], 1, v);
+time=(1:length(v))/Fs;
+au2=Quanti_signal; 
+au2.signal=y2;
+figure(),
+subplot(2,1,1);
+plot(time, v);
+title('Original wave: s(n)');
+subplot(2,1,2);
+plot(time, y2);
+title(sprintf('After pre-emphasis: s_2(n)=s(n)-a*s(n-1), a=%f', a));
+
+%Framing 
+s=y2(.4*length(y2):end)'; 
+Number_of_frames=240; 
+window_length=round(Fs/Number_of_frames);%size of the frame
+Frame_No=zeros(Number_of_frames);%The frame number
+Frame_No(1)=1;
+for i=1:Number_of_frames-1
+    Frame_No(i+1)=Frame_No(i)+window_length;
+end
+
+
+%Windowing
+ k12 = hamming(length(v));
+original=y2;
+windowed=v.* k12;
+[mag1, phase1, freq1]=fftOneSide(original, Fs);
+[mag2, phase2, freq2]=fftOneSide(windowed, Fs);
+figure(),
+subplot(3,2,1); plot(original); grid on;  title('Original signal');
+subplot(3,2,2); plot(windowed); grid on;  title('Windowed signal');
+subplot(3,2,3); plot(freq1, mag1); grid on; title('Energy spectrum (linear scale)');
+subplot(3,2,4); plot(freq2, mag2); grid on; title('Energy spectrum (linear scale)');
+subplot(3,2,5); plot(freq1, 20*log(mag1)); grid on; axis([-inf inf -80 120]); title('Energy spectrum (db)');
+subplot(3,2,6); plot(freq2, 20*log(mag2)); grid on; axis([-inf inf -80 120]); title('Energy spectrum (db)');
+
+%%% end point detection
+THRESHOLD=0.3; 
+TIME=5;
+
+samplePerFrame=floor(Fs/100);
+bgSampleCount=floor(Fs/5); 
+
+%calculation of mean and std
+bgSample=[];
+for i=1:1:bgSampleCount
+    bgSample=[bgSample windowed(i)];
+end
+meanVal=mean(bgSample);
+sDev=std(bgSample);
+%----------
+%identify voiced or not for each value
+for i=1:1:length(windowed)
+   if(abs(windowed(i)-meanVal)/sDev > THRESHOLD)
+       voiced(i)=1;
+   else
+       voiced(i)=0;
+   end
+end
+
+
+%discard insufficient samples of last frame
+
+usefulSamples=length(windowed)-mod(length(windowed),samplePerFrame);
+frameCount=usefulSamples/samplePerFrame;
+voicedFrameCount=0;
+for i=1:1:frameCount
+   cVoiced=0;
+   cUnVoiced=0;
+   for j=i*samplePerFrame-samplePerFrame+1:1:(i*samplePerFrame)
+       if(voiced(j)==1)
+           cVoiced=(cVoiced+1);
+       else
+           cUnVoiced=cUnVoiced+1;
+       end
+   end
+   %mark frame for voiced/unvoiced
+   if(cVoiced>cUnVoiced)
+       voicedFrameCount=voicedFrameCount+1;
+       voicedUnvoiced(i)=1;
+   else
+       voicedUnvoiced(i)=0;
+   end
+end
+
+silenceRemovedSignal=[];
+
+%-----
+for i=1:1:frameCount
+    if(voicedUnvoiced(i)==1)
+    for j=i*samplePerFrame-samplePerFrame+1:1:(i*samplePerFrame)
+            silenceRemovedSignal= [silenceRemovedSignal windowed(j)];
+        end
+    end
+end
+
+
+    figure; plot(silenceRemovedSignal);
+    title('silence removal');
+    win = 0.050;
+    step = 0.050;
+Cor = SpectralCentroid(silenceRemovedSignal, window_length*Fs, step*Fs, Fs);
+
+    MFCCs = mfcc_feature(silenceRemovedSignal,Fs);
+    
+    [coeff, score, latent, tsquared, explained, mu] = rmrm_selection( MFCCs);
+        test=[coeff(1) score(1) latent(1) tsquared(1) explained(1) mu(1)];
+
+     load master1;
+    
+class1=train_audioset{1,1};
+class2=train_audioset{1,2};
+class3=train_audioset{1,3};
+class4=train_audioset{1,4};
+class5=train_audioset{1,5};
+class6=train_audioset{1,6};
+
+
+c1_test=class1(6:5,:);
+c2_test=class2(6:5,:);
+c3_test=class3(6:5,:);
+c4_test=class4(6:5,:);
+c5_test=class5(6:5,:);
+c6_test=class6(6:5,:);
+
+
+
+tot_train= [class1;class2;class3;class4;class5;class6;];
+tot_test=[c1_test;c2_test;c3_test,c4_test,c5_test,c6_test];
+
+new_class=[1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6];
+    [itrfin]=svr1(tot_train,new_class,test);
+itrfin
+if (itrfin==1)
+    fprintf('\n\nthis music signal belongs ::blues:: class\n\n\n');
+    msgbox( '::blues::');
+elseif(itrfin==2)
+    fprintf('\n\nthis music signal belongs to ::classical:: class\n\n\n');
+     msgbox( '::classical::');
+    elseif(itrfin==3)
+        fprintf('\n\nthis music signal belongs to ::country:: class\n\n\n');
+          msgbox( '::country::');
+          elseif(itrfin==4)
+        fprintf('\n\nthis music signal belongs to ::disco:: class\n\n\n');
+          msgbox( '::disco::');
+          elseif(itrfin==5)
+        fprintf('\n\nthis music signal belongs to ::hiphop:: class\n\n\n');
+          msgbox( '::hiphop::');
+          elseif(itrfin==6)
+        fprintf('\n\nthis music signal belongs to ::jazz:: class\n\n\n');
+          msgbox( '::jazz::');
+end
+    
