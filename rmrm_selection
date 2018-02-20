@@ -1,0 +1,286 @@
+function [coeff, score, latent, tsquared, explained, mu] = rmrm_selection(x,varargin)
+
+
+
+[n, p] = size(x);
+
+paramNames = {'Algorithm','Centered','Economy','NumComponents','Rows',...
+    'Weights','VariableWeights','Coeff0','Score0','Options'};
+defaults   = {'svd',       true,      true,    p,           'complete',...
+    ones(1,n) ,ones(1,p),        [],      [], statset('pca')};
+
+[vAlgorithm, vCentered, vEconomy, vNumComponents, vRows,vWeights,...
+    vVariableWeights, c0, s0, opts, setFlag]...
+    = internal.stats.parseArgs(paramNames, defaults, varargin{:});
+% Validate String value for  Algorithm value
+AlgorithmNames = {'svd','eig','als'};
+vAlgorithm = internal.stats.getParamVal(vAlgorithm,AlgorithmNames,...
+    '''Algorithm''');
+vCentered = internal.stats.parseOnOff(vCentered,'''Centered''');
+vEconomy = internal.stats.parseOnOff(vEconomy,'''Economy''');
+if ~isempty(x) && ~internal.stats.isScalarInt(vNumComponents,1,p)
+    error(message('stats:pca:WrongNumComponents',p));
+end
+% Validate value for 'Rows' option
+RowsNames = {'complete','pairwise','all'};
+vRows = internal.stats.getParamVal(vRows,RowsNames,'''Rows''');
+
+switch vAlgorithm
+    case 'svd'
+        % Switch 'Algorithm' to 'eig' if 'Rows' set to 'pairwise'
+        if strcmp(vRows,'pairwise')
+            if setFlag.Algorithm
+                warning(message('stats:rmrm:NoPairwiseSVD'));
+            end
+            vAlgorithm = 'eig';
+        end    
+        % Switch algorithm to 'als' if user specify 'Coeff0' and 'Score0'.
+        if setFlag.Coeff0 || setFlag.Score0
+            vAlgorithm = 'als';
+        end
+    case 'als'
+        % If 'als' is chosen, force rmrm to use ALS and to ignore the
+        % Rows' option
+        if setFlag.Rows
+            warning(message('stats:rmrm:NoALSRows'));
+        end
+end
+
+% Validate Weights Vectors
+if isvector(vWeights) && isequal(numel(vWeights),n)
+    vWeights = reshape(vWeights,1,n); % make sure it is a row vector
+else
+    error(message('stats:rmrm:WrongObsWeights', n));
+end
+
+if internal.stats.isString(vVariableWeights)
+    WeightsNames = {'variance'};
+    internal.stats.getParamVal(vVariableWeights,WeightsNames,...
+        '''VariableWeights''');
+    vVariableWeights = 1./classreg.learning.internal.wnanvar(x,vWeights,1);
+elseif isnumeric(vVariableWeights) && isvector(vVariableWeights)...
+        && (isequal(numel(vVariableWeights), p))
+    vVariableWeights = reshape(vVariableWeights,1,p);
+else
+    error(message('stats:rmrm:WrongVarWeights', p));
+end
+
+if any(vWeights <= 0) || any(vVariableWeights <= 0)
+    error(message('stats:rmrm:NonPositiveWeights'));
+end
+% end of checking input arguments
+
+
+% Handling special empty case
+if isempty(x)
+    pOrZero = ~vEconomy * p;
+    coeff = zeros(p, pOrZero); 
+    coeff(1:p+1:end) = 1;
+    score = zeros(n, pOrZero);
+    latent = zeros(pOrZero, 1);
+    tsquared = zeros(n, 1);
+    explained = [];
+    mu = [];
+    return;
+end
+
+nanIdx = isnan(x);
+numNaN = sum(nanIdx, 2); % number of NaNs in each row
+wasNaN = any(numNaN,2); % Rows that contain NaN
+
+% Handling special cases where X is all NaNs:
+if all(nanIdx(:))
+    coeff = NaN;
+    score = NaN;
+    latent = NaN;
+    tsquared = NaN;
+    explained = NaN;
+    mu = NaN;
+    return;
+end
+% Handling special scalar case;
+if isscalar(x)
+    coeff = 1;
+    score = (~vCentered)*x;
+    latent = (~vCentered)*x^2;
+    tsquared = ~vCentered;
+    explained = 100;
+    mu = vCentered*x;
+    return;
+end
+
+if strcmp(vRows,'all') && (~strcmp(vAlgorithm,'als'))
+    if any(wasNaN)
+        error(message('stats:rmrm:RowsAll'));
+    else
+        vRows = 'complete';
+    end
+end
+
+if strcmp(vRows,'complete')
+  
+    DOF = max(0,n-vCentered-sum(wasNaN));
+elseif strcmp(vRows,'pairwise') 
+    notNaN = double(~nanIdx);
+    nanC = notNaN'*notNaN;
+    nanC = nanC.*(~eye(p));
+    DOF = max(nanC(:));
+    DOF = DOF-vCentered;
+else
+    DOF = max(0,n-vCentered);
+end
+
+% Weighted sample mean:
+mu = classreg.learning.internal.wnanmean(x, vWeights);
+
+switch vAlgorithm
+case 'eig'
+    % Center the data if 'Centered' is true.
+    if vCentered
+        x = bsxfun(@minus,x,mu);
+    end
+    
+    % Use EIG to compute.
+    [coeff, eigValues] = localEIG(x, vCentered, vRows, vWeights,...
+        vVariableWeights);
+    
+   
+    if (DOF<p)
+        if vEconomy
+            coeff(:, DOF+1:p) = [];
+            eigValues(DOF+1:p, :) = [];
+        else % make sure they are zeros.
+            eigValues(DOF+1:p, :) = 0;
+        end
+    end
+    
+    % Check if eigvalues are all postive
+    if any(eigValues<0)
+        error(message('stats:rmrm:CovNotPositiveSemiDefinite'));
+    end
+    
+    if nargout > 1
+        score = x/coeff';
+        latent = eigValues; % Output Eigenvalues
+        if nargout > 3
+            tsquared = localTSquared(score, latent, n, p);
+        end
+    end
+    
+case 'svd' % Use SVD to compute
+    % Center the data if 'Centered' is true.
+    if vCentered
+        x = bsxfun(@minus,x,mu);
+    end
+    
+    [U,sigma, coeff, wasNaN] = localSVD(x, n,...
+        vEconomy, vWeights, vVariableWeights);
+    if nargout > 1
+        score =  bsxfun(@times,U,sigma');
+        latent = sigma.^2./DOF;
+        if nargout > 3
+            tsquared = localTSquared(score,latent,DOF,p);
+        end
+        %Insert NaNs back
+        if any(wasNaN)
+            score = internal.stats.insertnan(wasNaN, score);
+            if nargout >3
+                tsquared = internal.stats.insertnan(wasNaN,tsquared);
+            end
+        end
+    end
+    
+    if DOF < p
+        % When 'Economy' value is true, nothing corresponding to zero
+        % eigenvalues should be returned.
+        if vEconomy
+            coeff(:, DOF+1:end) = [];
+            if nargout > 1
+                score(:, DOF+1:end)=[];
+                latent(DOF+1:end, :)=[];
+            end
+        elseif nargout > 1
+      
+            score(:, DOF+1:p) = 0;
+            latent(DOF+1:p, 1) = 0;
+        end
+    end
+    
+case 'als' % Alternating Least Square Algorithm
+    
+    vNumComponents = min([vNumComponents,n-vCentered,p]);  % ALS always return economy sized outputs    
+    
+    if isempty(s0);
+        s0 = randn(n,vNumComponents);
+    elseif ~isequal(size(s0),[n,vNumComponents])|| any(isnan(s0(:)))
+        error(message('stats:rmrm:BadInitialValues','Score0',n,vNumComponents));
+    end
+    if isempty(c0);
+        c0 = randn(p,vNumComponents);
+    elseif ~isequal(size(c0),[p,vNumComponents]) || any(isnan(c0(:)))
+        error(message('stats:rmrm:BadInitialValues','Coeff0',p,vNumComponents));
+    end
+     
+    [score,coeff,mu,latent]=alsmf(x,vNumComponents,'L0',s0,'R0',c0,...
+        'Weights',vWeights,'VariableWeights',vVariableWeights,...
+        'Orthonormal',true,'Centered',vCentered,'Options',opts);
+    
+    if nargout > 3   
+        tsquared = localTSquared(score, latent,n-vCentered, vNumComponents); 
+    end    
+end 
+
+
+if nargout > 4
+    explained = 100*latent/sum(latent);
+end
+
+if (vNumComponents<DOF)
+    coeff(:, vNumComponents+1:end) = [];
+    if nargout > 1
+    score(:, vNumComponents+1:end) = [];
+    end
+end
+
+
+% Enforce a sign convention on the coefficients -- the largest element in
+% each column will have a positive sign.
+[~,maxind] = max(abs(coeff), [], 1);
+[d1, d2] = size(coeff);
+colsign = sign(coeff(maxind + (0:d1:(d2-1)*d1)));
+coeff = bsxfun(@times, coeff, colsign);
+if nargout > 1
+    score = bsxfun(@times, score, colsign); % scores = score
+end
+
+end % End of main function
+
+
+%----------------Subfucntions--------------------------------------------
+
+function [coeff, eigValues]=localEIG(x,vCentered, vRows,vWeights,...
+        vVariableWeights)
+% Compute by EIG. vRows are the options of handing NaN when compute
+% covariance matrix
+
+% Apply observation and variable weights
+OmegaSqrt = sqrt(vWeights);
+PhiSqrt = sqrt(vVariableWeights);
+x = bsxfun(@times, x, OmegaSqrt');
+x = bsxfun(@times, x, PhiSqrt);
+
+xCov = ncnancov(x, vRows, vCentered);
+
+[coeff, eigValueDiag] = eig(xCov);
+[eigValues, idx] = sort(diag(eigValueDiag), 'descend');
+coeff = coeff(:, idx);
+
+coeff = bsxfun(@times, coeff,1./PhiSqrt');
+end
+
+
+
+
+
+
+
