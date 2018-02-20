@@ -1,0 +1,82 @@
+clc;
+clear all;
+close all;
+for i=1:5
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,16);
+ l=6-i;
+     
+        k1(l,1:6) = t11(1,1:6);
+   k1     
+ 
+   
+end
+for i=6:10
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,6);
+ l=11-i;
+     
+        k2(l,1:6) = t11(1,1:6);
+        
+
+end
+for i=11:15
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,6);
+  l=16-i;
+     
+        k3(l,1:6) = t11(1,1:6);
+        
+ 
+end
+
+for i=16:20
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,6);
+  l=21-i;
+     
+        k4(l,1:6) = t11(1,1:6);
+        
+end
+
+for i=21:25
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,6);
+  l=26-i;
+     
+        k5(l,1:6) = t11(1,1:6);
+        
+end 
+
+for i=26:30
+i
+    [v,Fs] = audioread(['audio\',num2str(i),'.au']);
+t11 = audio_train(v,Fs);
+%   k1=zeros(6,6);
+  l=31-i;
+     
+        k6(l,1:6) = t11(1,1:6);
+        
+end 
+
+train_audioset={k1 k2 k3 k4 k5 k6 };
+l1='blues';
+l2='classical';
+l3='country';
+l4='disco';
+l5='hiphop';
+l6='jazz';
+
+classes = { l1 l2 l3 l4 l5 l6 };
+
+save master1.mat train_audioset classes ;
