@@ -1,0 +1,36 @@
+function c = ncnancov(x,Rows,centered)
+
+
+if nargin <2
+    Rows = 'complete';
+end
+
+d = 0;
+if nargin>2
+    d =  d + centered;
+end
+
+idxnan = isnan(x);
+
+[n, p] = size(x);
+
+
+if ~any(any(idxnan))
+    c = x'*x/(n-d);
+elseif strcmp(Rows,'complete')
+    nanrows = any(idxnan,2);
+    xNotNaN = x((~nanrows),:);
+    denom = max(0, (size(xNotNaN,1)-d) );
+    c = xNotNaN'*xNotNaN/denom;
+elseif strcmp(Rows,'pairwise')
+    c = zeros(p,class(x));
+    for i = 1:p
+        for j = 1:i
+            NonNaNRows = ~any(idxnan(:,[i, j]),2);
+            denom = max(0,(sum(NonNaNRows)-d));
+            c(i,j) = x(NonNaNRows,i)'*x(NonNaNRows,j)/denom;
+        end
+    end
+    c = c + tril(c,-1)';
+end
+end
