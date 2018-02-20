@@ -1,0 +1,28 @@
+function MFCCs = mfcc_feature1(speech,fs)
+    Tw = 25;                
+    Ts = 10;             
+    alpha = 0.97;           
+    M = 20;                
+    C = 12;                 
+    L = 22;                 
+    LF = 300;               
+    HF = 3700;              
+
+    [ MFCCs, FBEs, frames ] = ...
+                    mfcc( speech, fs, Tw, Ts, alpha, @hamming, [LF HF], M, C+1, L );
+
+
+    [ Nw, NF ] = size( frames );                
+    time_frames = [0:NF-1]*Ts*0.001+0.5*Nw/fs;  
+    time = [ 0:length(speech)-1 ]/fs;           
+    logFBEs = 20*log10( FBEs );                 
+    logFBEs_floor = max(logFBEs(:))-50;         
+    logFBEs( logFBEs<logFBEs_floor ) = logFBEs_floor; 
+
+
+   
+
+  
+
+
+
