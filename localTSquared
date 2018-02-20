@@ -1,0 +1,20 @@
+function tsquared = localTSquared(score, latent,DOF, p)
+
+
+if isempty(score)
+    tsquared = score;
+    return;
+end
+
+r = min(DOF,p); % Max possible rank of x;
+if DOF > 1
+    q = sum(latent > max(DOF,p)*eps(latent(1)));
+    if q < r
+        warning(message('stats:rmrm:ColRankDefX', q)); 
+    end
+else
+    q = 0;
+end
+standScores = bsxfun(@times, score(:,1:q), 1./sqrt(latent(1:q,:))');
+tsquared = sum(standScores.^2, 2);
+end
